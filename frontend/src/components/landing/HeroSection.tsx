@@ -1,6 +1,5 @@
 import { motion } from "framer-motion"
 import {
-    Gamepad2,
     ShieldCheck,
     Trophy,
     UsersRound,
