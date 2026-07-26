@@ -14,6 +14,8 @@ import {
 import { useMemo, useRef, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import AuthLayout from "../../components/auth/AuthLayout"
+import { ApiError } from "../../services/api"
+import { authService } from "../../services/authService"
 
 interface FormErrors {
     fullName?: string
@@ -93,7 +95,7 @@ const SignupPage = () => {
 
         if (!fullName.trim()) nextErrors.fullName = "Full name is required."
         if (!email.trim()) nextErrors.email = "Email is required."
-        else if (!emailPattern.test(email)) nextErrors.email = "Enter a valid email address."
+        else if (!emailPattern.test(email.trim())) nextErrors.email = "Enter a valid email address."
         if (!phone.trim()) nextErrors.phone = "Phone number is required."
         if (!dob) nextErrors.dob = "Date of birth is required."
         if (!country) nextErrors.country = "Country is required."
@@ -113,38 +115,27 @@ const SignupPage = () => {
     const handleSubmit = async (event: React.SyntheticEvent<HTMLFormElement>) => {
         event.preventDefault()
         if (!validate()) return
-
         setLoading(true)
         setErrors({})
 
         try {
-            await new Promise(resolve => setTimeout(resolve, 900))
-
-            const profile = {
-                id: crypto.randomUUID(),
-                fullName,
-                email,
-                phone,
-                dob,
+            const response = await authService.register({
+                full_name: fullName.trim(),
+                email: email.trim().toLowerCase(),
+                phone: phone.trim(),
+                date_of_birth: dob,
                 country,
-                state,
-                language,
-                avatar,
-                verified: false,
-                createdAt: new Date().toISOString(),
-            }
-
-            localStorage.setItem("goldensweep_profile", JSON.stringify(profile))
-            localStorage.setItem(
-                "goldensweep_session",
-                JSON.stringify({ email, loggedInAt: new Date().toISOString() })
-            )
-
-            navigate("/profile")
-        } catch {
-            setErrors({
-                general: "Unable to create your account right now. Please try again.",
+                state: state.trim(),
+                preferred_language: language,
+                password,
+                age_confirmed: ageConfirmed,
+                terms_accepted: acceptedTerms,
             })
+
+            localStorage.setItem("goldensweep_pending_verification_email", response.data.email)
+            navigate("/verify-email")
+        } catch (error) {
+            setErrors({ general: error instanceof ApiError ? error.message : "Unable to create your account right now. Please try again." })
         } finally {
             setLoading(false)
         }
@@ -409,11 +400,10 @@ const Field = ({
         </label>
 
         <div
-            className={`mt-1.5 flex h-[48px] items-center rounded-xl border bg-black/25 px-3 transition ${
-                error
-                    ? "border-red-400/50"
-                    : "border-white/[0.09] focus-within:border-gold-400/45"
-            }`}
+            className={`mt-1.5 flex h-[48px] items-center rounded-xl border bg-black/25 px-3 transition ${error
+                ? "border-red-400/50"
+                : "border-white/[0.09] focus-within:border-gold-400/45"
+                }`}
         >
             {children}
         </div>
@@ -439,11 +429,10 @@ const ConsentRow = ({
 }) => (
     <div>
         <label
-            className={`flex min-h-[54px] cursor-pointer items-center gap-3 rounded-xl border p-3 ${
-                error
-                    ? "border-red-400/35 bg-red-500/[0.03]"
-                    : "border-white/[0.07] bg-white/[0.02]"
-            }`}
+            className={`flex min-h-[54px] cursor-pointer items-center gap-3 rounded-xl border p-3 ${error
+                ? "border-red-400/35 bg-red-500/[0.03]"
+                : "border-white/[0.07] bg-white/[0.02]"
+                }`}
         >
             <input
                 type="checkbox"
