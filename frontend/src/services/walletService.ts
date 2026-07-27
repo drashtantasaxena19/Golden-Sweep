@@ -7,9 +7,15 @@ import type {
   WalletTransactionListResponse,
 } from "../types/wallet";
 
-const API_BASE_URL =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ||
+const RAW_API_BASE_URL =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ||
   "http://127.0.0.1:8000";
+
+const NORMALIZED_API_BASE_URL = RAW_API_BASE_URL.replace(/\/+$/, "");
+
+const API_BASE_URL = NORMALIZED_API_BASE_URL.endsWith("/api")
+  ? NORMALIZED_API_BASE_URL
+  : `${NORMALIZED_API_BASE_URL}/api`;
 
 function getAuthToken(): string | null {
   return (
@@ -20,32 +26,64 @@ function getAuthToken(): string | null {
   );
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
   const token = getAuthToken();
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const headers = new Headers(options.headers);
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers ?? {}),
+  if (options.body !== undefined && !(options.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}${normalizedPath}`,
+    {
+      ...options,
+      headers,
     },
-  });
+  );
 
   if (!response.ok) {
     let message = `Request failed with status ${response.status}.`;
 
     try {
-      const contentType = response.headers.get("content-type") || "";
+      const contentType =
+        response.headers.get("content-type") || "";
+
       if (contentType.includes("application/json")) {
         const payload = (await response.json()) as {
-          detail?: string;
+          detail?:
+            | string
+            | Array<{
+                loc?: Array<string | number>;
+                msg?: string;
+                type?: string;
+              }>;
           message?: string;
         };
-        message = payload.detail || payload.message || message;
+
+        if (typeof payload.detail === "string") {
+          message = payload.detail;
+        } else if (Array.isArray(payload.detail)) {
+          message = payload.detail
+            .map((error) => {
+              const location = error.loc?.join(".") || "request";
+              return `${location}: ${error.msg || "Invalid value"}`;
+            })
+            .join(", ");
+        } else if (payload.message) {
+          message = payload.message;
+        }
       } else {
         const text = await response.text();
-        message = text || message;
+        message = text || response.statusText || message;
       }
     } catch {
       message = response.statusText || message;
@@ -54,14 +92,37 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new Error(message);
   }
 
-  if (response.status === 204) return undefined as T;
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const contentType =
+    response.headers.get("content-type") || "";
+
+  if (!contentType.includes("application/json")) {
+    const text = await response.text();
+
+    throw new Error(
+      `Expected JSON response but received ${
+        contentType || "unknown content type"
+      }. Response: ${text.slice(0, 120)}`,
+    );
+  }
 
   return (await response.json()) as T;
 }
 
+type WalletActionResponse = {
+  success: boolean;
+  message: string;
+  wallet: Wallet;
+};
+
 const walletService = {
   getStatistics(): Promise<WalletStatistics> {
-    return request<WalletStatistics>("/api/admin/wallet/statistics");
+    return request<WalletStatistics>(
+      "/admin/wallet/statistics",
+    );
   },
 
   getWallets(
@@ -74,29 +135,40 @@ const walletService = {
       limit: String(limit),
     });
 
-    if (filters.search.trim()) {
-      params.set("search", filters.search.trim());
+    const search = filters.search?.trim();
+
+    if (search) {
+      params.set("search", search);
     }
 
-    if (filters.status !== "all") {
-      params.set("is_frozen", filters.status === "frozen" ? "true" : "false");
+    if (filters.status && filters.status !== "all") {
+      params.set(
+        "is_frozen",
+        filters.status === "frozen" ? "true" : "false",
+      );
     }
 
-    if (filters.minimumBalance.trim()) {
-      params.set("minimum_balance", filters.minimumBalance.trim());
+    const minimumBalance = filters.minimumBalance?.trim();
+
+    if (minimumBalance) {
+      params.set("minimum_balance", minimumBalance);
     }
 
-    if (filters.maximumBalance.trim()) {
-      params.set("maximum_balance", filters.maximumBalance.trim());
+    const maximumBalance = filters.maximumBalance?.trim();
+
+    if (maximumBalance) {
+      params.set("maximum_balance", maximumBalance);
     }
 
     return request<WalletListResponse>(
-      `/api/admin/wallet?${params.toString()}`,
+      `/admin/wallet?${params.toString()}`,
     );
   },
 
   getWallet(walletId: string): Promise<Wallet> {
-    return request<Wallet>(`/api/admin/wallet/${walletId}`);
+    return request<Wallet>(
+      `/admin/wallet/${encodeURIComponent(walletId)}`,
+    );
   },
 
   getTransactions(
@@ -109,47 +181,61 @@ const walletService = {
       limit: String(limit),
     });
 
-    if (walletId) params.set("wallet_id", walletId);
+    if (walletId) {
+      params.set("wallet_id", walletId);
+    }
 
     return request<WalletTransactionListResponse>(
-      `/api/admin/wallet/transactions?${params.toString()}`,
+      `/admin/wallet/transactions?${params.toString()}`,
     );
   },
 
   creditWallet(
     walletId: string,
     payload: WalletAdjustmentPayload,
-  ): Promise<{ success: boolean; message: string; wallet: Wallet }> {
-    return request(`/api/admin/wallet/${walletId}/credit`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+  ): Promise<WalletActionResponse> {
+    return request<WalletActionResponse>(
+      `/admin/wallet/${encodeURIComponent(walletId)}/credit`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
   },
 
   debitWallet(
     walletId: string,
     payload: WalletAdjustmentPayload,
-  ): Promise<{ success: boolean; message: string; wallet: Wallet }> {
-    return request(`/api/admin/wallet/${walletId}/debit`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+  ): Promise<WalletActionResponse> {
+    return request<WalletActionResponse>(
+      `/admin/wallet/${encodeURIComponent(walletId)}/debit`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
   },
 
   freezeWallet(
     walletId: string,
-  ): Promise<{ success: boolean; message: string; wallet: Wallet }> {
-    return request(`/api/admin/wallet/${walletId}/freeze`, {
-      method: "PATCH",
-    });
+  ): Promise<WalletActionResponse> {
+    return request<WalletActionResponse>(
+      `/admin/wallet/${encodeURIComponent(walletId)}/freeze`,
+      {
+        method: "PATCH",
+      },
+    );
   },
 
   unfreezeWallet(
     walletId: string,
-  ): Promise<{ success: boolean; message: string; wallet: Wallet }> {
-    return request(`/api/admin/wallet/${walletId}/unfreeze`, {
-      method: "PATCH",
-    });
+  ): Promise<WalletActionResponse> {
+    return request<WalletActionResponse>(
+      `/admin/wallet/${encodeURIComponent(walletId)}/unfreeze`,
+      {
+        method: "PATCH",
+      },
+    );
   },
 };
 

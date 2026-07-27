@@ -6,9 +6,15 @@ import type {
     RechargePackageStatistics,
 } from "../types/recharge";
 
-const API_BASE_URL =
-    (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ||
+const RAW_API_BASE_URL =
+    (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ||
     "http://127.0.0.1:8000";
+
+const NORMALIZED_API_BASE_URL = RAW_API_BASE_URL.replace(/\/+$/, "");
+
+const API_BASE_URL = NORMALIZED_API_BASE_URL.endsWith("/api")
+    ? NORMALIZED_API_BASE_URL
+    : `${NORMALIZED_API_BASE_URL}/api`;
 
 function getAuthToken(): string | null {
     return (
@@ -25,34 +31,67 @@ async function request<T>(
 ): Promise<T> {
     const token = getAuthToken();
 
-    const response = await fetch(`${API_BASE_URL}${path}`, {
-        ...options,
-        headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            ...(options.headers ?? {}),
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+    const headers = new Headers(options.headers);
+
+    if (options.body !== undefined && !(options.body instanceof FormData)) {
+        headers.set("Content-Type", "application/json");
+    }
+
+    if (token) {
+        headers.set("Authorization", `Bearer ${token}`);
+    }
+
+    const response = await fetch(
+        `${API_BASE_URL}${normalizedPath}`,
+        {
+            ...options,
+            headers,
         },
-    });
+    );
 
     if (!response.ok) {
         let detail = `Request failed with status ${response.status}.`;
 
         try {
-            const contentType = response.headers.get("content-type") || "";
+            const contentType =
+                response.headers.get("content-type") || "";
 
             if (contentType.includes("application/json")) {
                 const payload = (await response.json()) as {
-                    detail?: string;
+                    detail?: string | Array<{
+                        loc?: Array<string | number>;
+                        msg?: string;
+                        type?: string;
+                    }>;
                     message?: string;
                 };
 
-                detail = payload.detail || payload.message || detail;
+                if (typeof payload.detail === "string") {
+                    detail = payload.detail;
+                } else if (Array.isArray(payload.detail)) {
+                    detail = payload.detail
+                        .map((error) => {
+                            const location = error.loc?.join(".") || "request";
+                            return `${location}: ${error.msg || "Invalid value"}`;
+                        })
+                        .join(", ");
+                } else if (payload.message) {
+                    detail = payload.message;
+                }
             } else {
                 const text = await response.text();
-                detail = text || response.statusText || detail;
+
+                detail =
+                    text ||
+                    response.statusText ||
+                    detail;
             }
         } catch {
-            detail = response.statusText || detail;
+            detail =
+                response.statusText ||
+                detail;
         }
 
         throw new Error(detail);
@@ -62,13 +101,16 @@ async function request<T>(
         return undefined as T;
     }
 
-    const contentType = response.headers.get("content-type") || "";
+    const contentType =
+        response.headers.get("content-type") || "";
 
     if (!contentType.includes("application/json")) {
         const text = await response.text();
 
         throw new Error(
-            `Expected JSON response but received ${contentType || "unknown content type"}. Response: ${text.slice(0, 120)}`,
+            `Expected JSON response but received ${
+                contentType || "unknown content type"
+            }. Response: ${text.slice(0, 120)}`,
         );
     }
 
@@ -78,7 +120,7 @@ async function request<T>(
 const rechargeService = {
     async getStatistics(): Promise<RechargePackageStatistics> {
         return request<RechargePackageStatistics>(
-            "/api/admin/recharge/statistics",
+            "/admin/recharge/statistics",
         );
     },
 
@@ -94,36 +136,45 @@ const rechargeService = {
             sort_order: "asc",
         });
 
-        if (filters.search.trim()) {
-            params.set("search", filters.search.trim());
+        const search = filters.search?.trim();
+
+        if (search) {
+            params.set("search", search);
         }
 
         if (filters.status) {
             params.set(
                 "is_active",
-                filters.status === "active" ? "true" : "false",
+                filters.status === "active"
+                    ? "true"
+                    : "false",
             );
         }
 
-        if (filters.currency.trim()) {
+        const currency = filters.currency?.trim();
+
+        if (currency) {
             params.set(
                 "currency",
-                filters.currency.trim().toUpperCase(),
+                currency.toUpperCase(),
             );
         }
 
         return request<RechargePackageListResponse>(
-            `/api/admin/recharge?${params.toString()}`,
+            `/admin/recharge?${params.toString()}`,
         );
     },
 
     async createPackage(
         payload: RechargePackagePayload,
     ): Promise<RechargePackage> {
-        return request<RechargePackage>("/api/admin/recharge", {
-            method: "POST",
-            body: JSON.stringify(payload),
-        });
+        return request<RechargePackage>(
+            "/admin/recharge",
+            {
+                method: "POST",
+                body: JSON.stringify(payload),
+            },
+        );
     },
 
     async updatePackage(
@@ -131,7 +182,7 @@ const rechargeService = {
         payload: Partial<RechargePackagePayload>,
     ): Promise<RechargePackage> {
         return request<RechargePackage>(
-            `/api/admin/recharge/${packageId}`,
+            `/admin/recharge/${encodeURIComponent(packageId)}`,
             {
                 method: "PATCH",
                 body: JSON.stringify(payload),
@@ -143,7 +194,7 @@ const rechargeService = {
         packageId: string,
     ): Promise<RechargePackage> {
         return request<RechargePackage>(
-            `/api/admin/recharge/${packageId}/activate`,
+            `/admin/recharge/${encodeURIComponent(packageId)}/activate`,
             {
                 method: "PATCH",
             },
@@ -154,16 +205,18 @@ const rechargeService = {
         packageId: string,
     ): Promise<RechargePackage> {
         return request<RechargePackage>(
-            `/api/admin/recharge/${packageId}/deactivate`,
+            `/admin/recharge/${encodeURIComponent(packageId)}/deactivate`,
             {
                 method: "PATCH",
             },
         );
     },
 
-    async deletePackage(packageId: string): Promise<void> {
+    async deletePackage(
+        packageId: string,
+    ): Promise<void> {
         return request<void>(
-            `/api/admin/recharge/${packageId}`,
+            `/admin/recharge/${encodeURIComponent(packageId)}`,
             {
                 method: "DELETE",
             },

@@ -4,7 +4,6 @@ import {
     ArrowDownRight,
     ArrowUpRight,
     CircleDollarSign,
-    Clock3,
     Gamepad2,
     LoaderCircle,
     RefreshCw,
@@ -23,10 +22,17 @@ import {
 import { useNavigate } from "react-router-dom"
 
 import adminService from "../../services/adminService"
+import analyticsService, {
+    type AnalyticsDashboardData,
+} from "../../services/analyticsService"
 
 import type {
     AdminDashboardStats,
 } from "../../types/admin"
+import type {
+    AnalyticsGranularity,
+    GamePerformanceItem,
+} from "../../types/analytics"
 
 
 interface StatCardProps {
@@ -38,7 +44,7 @@ interface StatCardProps {
 }
 
 
-interface RecentActivityItem {
+interface SnapshotItem {
     title: string
     description: string
     time: string
@@ -46,80 +52,37 @@ interface RecentActivityItem {
 }
 
 
-interface TopGameItem {
-    name: string
-    players: string
-    revenue: string
-    percentage: number
+type DashboardPeriod = 7 | 30 | 90
+
+
+interface DashboardRange {
+    startDate: Date
+    endDate: Date
+    granularity: AnalyticsGranularity
 }
-
-
-const revenueChartData = [
-    42,
-    58,
-    49,
-    71,
-    65,
-    83,
-    61,
-    74,
-    92,
-    78,
-    88,
-    96,
-]
-
-
-const months = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-]
-
-
-const topGames: TopGameItem[] = [
-    {
-        name: "Golden Roulette",
-        players: "3,420",
-        revenue: "$84,620",
-        percentage: 86,
-    },
-    {
-        name: "Royal Slots",
-        players: "2,780",
-        revenue: "$62,180",
-        percentage: 72,
-    },
-    {
-        name: "Lucky Spin",
-        players: "1,940",
-        revenue: "$41,760",
-        percentage: 58,
-    },
-    {
-        name: "Golden Cards",
-        players: "1,260",
-        revenue: "$25,840",
-        percentage: 42,
-    },
-]
 
 
 const formatNumber = (
     value: number,
+    maximumFractionDigits = 0,
 ): string => {
     return new Intl.NumberFormat(
         "en-US",
-    ).format(value)
+        {
+            maximumFractionDigits,
+        },
+    ).format(
+        Number.isFinite(value)
+            ? value
+            : 0,
+    )
+}
+
+
+const formatPercentage = (
+    value: number,
+): string => {
+    return `${formatNumber(value, 1)}%`
 }
 
 
@@ -142,13 +105,62 @@ const formatDateTime = (
 }
 
 
+const buildRange = (
+    period: DashboardPeriod,
+): DashboardRange => {
+    const endDate = new Date()
+    endDate.setHours(23, 59, 59, 999)
+
+    const startDate = new Date(endDate)
+    startDate.setDate(
+        startDate.getDate() - (period - 1),
+    )
+    startDate.setHours(0, 0, 0, 0)
+
+    return {
+        startDate,
+        endDate,
+        granularity:
+            period <= 30
+                ? "day"
+                : "week",
+    }
+}
+
+
+const safeChartMaximum = (
+    values: number[],
+): number => {
+    return Math.max(
+        1,
+        ...values.map(value =>
+            Number.isFinite(value)
+                ? Math.max(0, value)
+                : 0,
+        ),
+    )
+}
+
+
 const AdminDashboard = () => {
     const navigate = useNavigate()
+
+    const [
+        period,
+        setPeriod,
+    ] = useState<DashboardPeriod>(30)
 
     const [
         dashboard,
         setDashboard,
     ] = useState<AdminDashboardStats | null>(
+        null,
+    )
+
+    const [
+        analytics,
+        setAnalytics,
+    ] = useState<AnalyticsDashboardData | null>(
         null,
     )
 
@@ -167,23 +179,33 @@ const AdminDashboard = () => {
             setIsLoading(true)
             setError(null)
 
-            try {
-                const response =
-                    await adminService
-                        .getDashboardStats()
+            const range = buildRange(period)
 
-                setDashboard(response)
+            try {
+                const [
+                    dashboardResponse,
+                    analyticsResponse,
+                ] = await Promise.all([
+                    adminService.getDashboardStats(),
+                    analyticsService.getDashboard(
+                        range,
+                        5,
+                    ),
+                ])
+
+                setDashboard(dashboardResponse)
+                setAnalytics(analyticsResponse)
             } catch (requestError) {
                 setError(
                     requestError instanceof Error
                         ? requestError.message
-                        : "Unable to load dashboard statistics.",
+                        : "Unable to load dashboard data.",
                 )
             } finally {
                 setIsLoading(false)
             }
         },
-        [],
+        [period],
     )
 
     useEffect(() => {
@@ -193,172 +215,233 @@ const AdminDashboard = () => {
     const stats = useMemo<
         StatCardProps[]
     >(() => {
-        if (!dashboard) {
+        if (!dashboard || !analytics) {
             return []
         }
 
         const {
-            users,
             administrators,
-            wallet,
-            growth,
         } = dashboard
+
+        const overview =
+            analytics.overview
 
         return [
             {
                 title: "Total Players",
                 value: formatNumber(
-                    users.total,
+                    overview.users.total_players,
                 ),
                 change: `${formatNumber(
-                    growth.new_users_this_month,
-                )} this month`,
-                positive: true,
+                    overview.users.new_users_in_range,
+                )} new in period`,
+                positive:
+                    overview.users
+                        .growth_percentage >= 0,
                 icon: <Users size={21} />,
             },
             {
-                title: "Active Players",
+                title: "Active Users",
                 value: formatNumber(
-                    users.active,
+                    overview.users.active_users,
                 ),
-                change: `${users.active_user_rate.toFixed(
-                    1,
-                )}% active`,
-                positive: true,
+                change: `${formatPercentage(
+                    overview.kpis.active_user_rate,
+                )} active`,
+                positive:
+                    overview.kpis
+                        .active_user_rate > 0,
                 icon: (
                     <UserCheck size={21} />
                 ),
             },
             {
-                title: "Verified Players",
+                title: "Verified Users",
                 value: formatNumber(
-                    users.verified,
+                    overview.users.verified_users,
                 ),
-                change: `${users.verification_rate.toFixed(
-                    1,
-                )}% verified`,
-                positive: true,
+                change: `${formatPercentage(
+                    overview.kpis
+                        .verified_user_rate,
+                )} verified`,
+                positive:
+                    overview.kpis
+                        .verified_user_rate > 0,
                 icon: (
                     <ShieldCheck size={21} />
                 ),
             },
             {
-                title: "Wallet Balance",
-                value: `${formatNumber(
-                    wallet.total_balance,
-                )} ${wallet.currency}`,
-                change: "Live wallet total",
+                title: "Coins in Circulation",
+                value: formatNumber(
+                    overview.wallet
+                        .total_coins_in_circulation,
+                ),
+                change: `${formatNumber(
+                    overview.wallet.active_wallets,
+                )} active wallets`,
                 positive: true,
                 icon: (
                     <WalletCards size={21} />
                 ),
             },
             {
+                title: "Transactions",
+                value: formatNumber(
+                    overview.transactions
+                        .total_transactions,
+                ),
+                change: `${formatNumber(
+                    overview.transactions
+                        .transactions_today,
+                )} today`,
+                positive:
+                    overview.transactions
+                        .total_transactions > 0,
+                icon: (
+                    <CircleDollarSign
+                        size={21}
+                    />
+                ),
+            },
+            {
                 title: "Administrators",
                 value: formatNumber(
                     administrators.total_admins +
-                        administrators
-                            .total_super_admins,
-                ),
-                change: `${
                     administrators
-                        .total_super_admins
-                } super admin`,
-                positive: true,
+                        .total_super_admins,
+                ),
+                change: `${formatNumber(
+                    administrators
+                        .pending_requests,
+                )} pending`,
+                positive:
+                    administrators
+                        .pending_requests === 0,
                 icon: (
                     <ShieldCheck size={21} />
                 ),
             },
-            {
-                title: "Pending Requests",
-                value: formatNumber(
-                    administrators
-                        .pending_requests,
-                ),
-                change: "Needs review",
-                positive:
-                    administrators
-                        .pending_requests === 0,
-                icon: <Clock3 size={21} />,
-            },
         ]
-    }, [dashboard])
+    }, [analytics, dashboard])
 
-    const recentActivity = useMemo<
-        RecentActivityItem[]
+    const snapshots = useMemo<
+        SnapshotItem[]
     >(() => {
-        if (!dashboard) {
+        if (!dashboard || !analytics) {
             return []
         }
 
-        const {
-            users,
-            administrators,
-            growth,
-        } = dashboard
+        const overview =
+            analytics.overview
 
-        const activity: RecentActivityItem[] =
-            []
-
-        if (growth.new_users_today > 0) {
-            activity.push({
+        const items: SnapshotItem[] = [
+            {
                 title:
-                    "New players registered",
+                    "Player registrations",
                 description: `${formatNumber(
-                    growth.new_users_today,
-                )} new player account(s) were created today.`,
-                time: "Today",
+                    overview.users
+                        .new_users_in_range,
+                )} player account(s) were created during the selected period.`,
+                time: `${period}-day window`,
                 icon: <Users size={17} />,
-            })
-        }
+            },
+            {
+                title:
+                    "Wallet circulation",
+                description: `${formatNumber(
+                    overview.wallet
+                        .total_coins_in_circulation,
+                )} coins are currently held across ${formatNumber(
+                    overview.wallet
+                        .total_wallets,
+                )} wallet(s).`,
+                time: "Live snapshot",
+                icon: (
+                    <WalletCards size={17} />
+                ),
+            },
+            {
+                title:
+                    "Transaction activity",
+                description: `${formatNumber(
+                    overview.transactions
+                        .total_transactions,
+                )} transaction(s) moved ${formatNumber(
+                    overview.transactions
+                        .total_credited_coins,
+                )} credited and ${formatNumber(
+                    overview.transactions
+                        .total_debited_coins,
+                )} debited coins.`,
+                time: `${period}-day window`,
+                icon: (
+                    <TrendingUp size={17} />
+                ),
+            },
+            {
+                title:
+                    "Dashboard refreshed",
+                description:
+                    "Player, wallet, transaction, revenue, and game analytics were loaded from the live GoldenSweep database.",
+                time: formatDateTime(
+                    overview.generated_at,
+                ),
+                icon: <Activity size={17} />,
+            },
+        ]
 
         if (
-            administrators.pending_requests >
-            0
+            dashboard.administrators
+                .pending_requests > 0
         ) {
-            activity.push({
+            items.unshift({
                 title:
-                    "Admin requests pending",
+                    "Admin requests need review",
                 description: `${formatNumber(
-                    administrators
+                    dashboard.administrators
                         .pending_requests,
-                )} administrator request(s) require review.`,
+                )} administrator request(s) are currently pending.`,
                 time: "Needs attention",
-                icon: (
-                    <ShieldCheck size={17} />
-                ),
-            })
-        }
-
-        if (users.unverified > 0) {
-            activity.push({
-                title:
-                    "Unverified player accounts",
-                description: `${formatNumber(
-                    users.unverified,
-                )} player account(s) have not verified their email.`,
-                time: "Current status",
                 icon: (
                     <AlertCircle size={17} />
                 ),
             })
         }
 
-        activity.push({
-            title:
-                "Dashboard statistics updated",
-            description:
-                "Live player, wallet and administrator statistics were fetched successfully.",
-            time: formatDateTime(
-                dashboard.generated_at,
+        return items.slice(0, 4)
+    }, [analytics, dashboard, period])
+
+    const revenueTrend = useMemo(
+        () =>
+            analytics?.revenue
+                .revenue_trend ?? [],
+        [analytics],
+    )
+
+    const revenueMaximum = useMemo(
+        () =>
+            safeChartMaximum(
+                revenueTrend.map(
+                    point => point.value,
+                ),
             ),
-            icon: <Activity size={17} />,
-        })
+        [revenueTrend],
+    )
 
-        return activity.slice(0, 4)
-    }, [dashboard])
+    const topGames = useMemo<
+        GamePerformanceItem[]
+    >(
+        () =>
+            analytics?.games.top_games ??
+            [],
+        [analytics],
+    )
 
-    if (isLoading && !dashboard) {
+    if (
+        isLoading &&
+        (!dashboard || !analytics)
+    ) {
         return (
             <main className="flex min-h-screen items-center justify-center bg-[#020309] px-5 text-white">
                 <div className="text-center">
@@ -368,7 +451,7 @@ const AdminDashboard = () => {
                     />
 
                     <p className="mt-4 text-sm font-bold text-white/45">
-                        Loading GoldenSweep
+                        Loading live GoldenSweep
                         dashboard...
                     </p>
                 </div>
@@ -376,7 +459,10 @@ const AdminDashboard = () => {
         )
     }
 
-    if (error && !dashboard) {
+    if (
+        error &&
+        (!dashboard || !analytics)
+    ) {
         return (
             <main className="flex min-h-screen items-center justify-center bg-[#020309] px-5 text-white">
                 <div className="w-full max-w-lg rounded-2xl border border-red-400/15 bg-red-400/[0.04] p-8 text-center">
@@ -408,9 +494,15 @@ const AdminDashboard = () => {
         )
     }
 
-    if (!dashboard) {
+    if (!dashboard || !analytics) {
         return null
     }
+
+    const {
+        overview,
+        revenue,
+        games,
+    } = analytics
 
     return (
         <main className="min-h-screen bg-[#020309] px-5 py-6 text-white lg:px-8">
@@ -419,8 +511,8 @@ const AdminDashboard = () => {
                     <div>
                         <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-[#e7b23c]">
                             <Activity size={15} />
-
-                            GoldenSweep Control Center
+                            GoldenSweep Control
+                            Center
                         </div>
 
                         <h1 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-4xl">
@@ -428,10 +520,10 @@ const AdminDashboard = () => {
                         </h1>
 
                         <p className="mt-2 max-w-2xl text-sm leading-6 text-white/40">
-                            Monitor players, wallet
-                            activity, platform revenue,
-                            games and administrative
-                            operations.
+                            Live player, wallet,
+                            transaction, revenue, and
+                            game intelligence from the
+                            GoldenSweep database.
                         </p>
                     </div>
 
@@ -462,7 +554,6 @@ const AdminDashboard = () => {
                                         : ""
                                 }
                             />
-
                             REFRESH
                         </button>
 
@@ -470,12 +561,12 @@ const AdminDashboard = () => {
                             type="button"
                             onClick={() =>
                                 navigate(
-                                    "/admin/reports",
+                                    "/admin/analytics",
                                 )
                             }
                             className="flex h-11 items-center justify-center rounded-xl bg-gradient-to-r from-[#d79417] via-[#ffd45d] to-[#dc9715] px-5 text-xs font-black text-black transition hover:scale-[1.02]"
                         >
-                            VIEW REPORTS
+                            VIEW ANALYTICS
                         </button>
                     </div>
                 </section>
@@ -489,8 +580,9 @@ const AdminDashboard = () => {
 
                         <p className="text-xs text-amber-100/70">
                             Unable to refresh the latest
-                            statistics. Showing the last
-                            loaded data. {error}
+                            information. Showing the last
+                            successfully loaded data.{" "}
+                            {error}
                         </p>
                     </div>
                 )}
@@ -513,103 +605,164 @@ const AdminDashboard = () => {
                                 </p>
 
                                 <h2 className="mt-1 text-xl font-black">
-                                    Platform earnings
+                                    Live coin movement
                                 </h2>
                             </div>
 
                             <select
-                                defaultValue="30"
+                                value={period}
+                                onChange={event =>
+                                    setPeriod(
+                                        Number(
+                                            event.target
+                                                .value,
+                                        ) as DashboardPeriod,
+                                    )
+                                }
                                 className="h-10 rounded-xl border border-white/[0.08] bg-black/30 px-3 text-xs font-bold text-white/55 outline-none"
                             >
-                                <option value="7">
+                                <option value={7}>
                                     Last 7 days
                                 </option>
-
-                                <option value="30">
+                                <option value={30}>
                                     Last 30 days
                                 </option>
-
-                                <option value="90">
+                                <option value={90}>
                                     Last 90 days
                                 </option>
                             </select>
                         </div>
 
-                        <div className="mt-4 rounded-xl border border-amber-400/10 bg-amber-400/[0.025] px-4 py-3">
-                            <p className="text-xs leading-5 text-amber-100/55">
-                                Revenue and transaction
-                                APIs are not connected yet.
-                                The chart below currently
-                                displays dashboard preview
-                                data.
-                            </p>
-                        </div>
-
                         <div className="mt-5 grid gap-4 sm:grid-cols-3">
                             <Metric
-                                label="Gross Revenue"
-                                value="$248,920"
-                                change="+12.6%"
-                                positive
+                                label="Credited Coins"
+                                value={formatNumber(
+                                    revenue.summary
+                                        .total_credited_coins,
+                                )}
+                                change={formatPercentage(
+                                    revenue.summary
+                                        .growth_percentage,
+                                )}
+                                positive={
+                                    revenue.summary
+                                        .growth_percentage >=
+                                    0
+                                }
                             />
 
                             <Metric
-                                label="Player Deposits"
-                                value="$186,440"
-                                change="+9.2%"
-                                positive
+                                label="Debited Coins"
+                                value={formatNumber(
+                                    revenue.summary
+                                        .total_debited_coins,
+                                )}
+                                change={`${formatNumber(
+                                    revenue.summary
+                                        .average_debit_amount,
+                                    2,
+                                )} average`}
+                                positive={false}
                             />
 
                             <Metric
-                                label="Payouts"
-                                value="$82,310"
-                                change="-3.4%"
+                                label="Net Coin Flow"
+                                value={formatNumber(
+                                    revenue.summary
+                                        .net_coin_flow,
+                                )}
+                                change={`${formatNumber(
+                                    revenue.summary
+                                        .average_revenue_per_user,
+                                    2,
+                                )} per user`}
+                                positive={
+                                    revenue.summary
+                                        .net_coin_flow >= 0
+                                }
                             />
                         </div>
 
-                        <div className="mt-7 flex h-[270px] items-end gap-2 rounded-2xl border border-white/[0.05] bg-black/20 px-4 pb-4 pt-8">
-                            {revenueChartData.map(
-                                (
-                                    height,
-                                    index,
-                                ) => (
-                                    <div
-                                        key={`${height}-${index}`}
-                                        className="group relative flex h-full flex-1 items-end"
-                                    >
-                                        <div
-                                            style={{
-                                                height: `${height}%`,
-                                            }}
-                                            className="w-full rounded-t-md bg-gradient-to-t from-[#9c630c] via-[#e1a82e] to-[#ffe58b] opacity-80 transition group-hover:opacity-100"
-                                        />
+                        {revenueTrend.length ? (
+                            <>
+                                <div className="mt-7 flex h-[270px] items-end gap-2 rounded-2xl border border-white/[0.05] bg-black/20 px-4 pb-4 pt-8">
+                                    {revenueTrend.map(
+                                        (
+                                            point,
+                                            index,
+                                        ) => {
+                                            const height =
+                                                Math.max(
+                                                    2,
+                                                    (Math.max(
+                                                        0,
+                                                        point.value,
+                                                    ) /
+                                                        revenueMaximum) *
+                                                    100,
+                                                )
 
-                                        <span className="pointer-events-none absolute -top-7 left-1/2 hidden -translate-x-1/2 rounded-md bg-black px-2 py-1 text-[9px] font-bold text-white group-hover:block">
-                                            ${height}K
-                                        </span>
-                                    </div>
-                                ),
-                            )}
-                        </div>
+                                            return (
+                                                <div
+                                                    key={`${point.date}-${index}`}
+                                                    className="group relative flex h-full min-w-0 flex-1 items-end"
+                                                >
+                                                    <div
+                                                        style={{
+                                                            height: `${height}%`,
+                                                        }}
+                                                        className="w-full rounded-t-md bg-gradient-to-t from-[#9c630c] via-[#e1a82e] to-[#ffe58b] opacity-80 transition group-hover:opacity-100"
+                                                    />
 
-                        <div className="mt-3 grid grid-cols-6 gap-2 text-center text-[9px] font-bold uppercase tracking-wider text-white/20 sm:grid-cols-12">
-                            {months.map(month => (
-                                <span key={month}>
-                                    {month}
-                                </span>
-                            ))}
-                        </div>
+                                                    <span className="pointer-events-none absolute -top-8 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-black px-2 py-1 text-[9px] font-bold text-white group-hover:block">
+                                                        {formatNumber(
+                                                            point.value,
+                                                        )}{" "}
+                                                        coins
+                                                    </span>
+                                                </div>
+                                            )
+                                        },
+                                    )}
+                                </div>
+
+                                <div
+                                    className="mt-3 grid gap-2 text-center text-[9px] font-bold uppercase tracking-wider text-white/20"
+                                    style={{
+                                        gridTemplateColumns: `repeat(${Math.min(
+                                            revenueTrend.length,
+                                            12,
+                                        )}, minmax(0, 1fr))`,
+                                    }}
+                                >
+                                    {revenueTrend
+                                        .slice(-12)
+                                        .map(point => (
+                                            <span
+                                                key={`${point.date}-${point.label}`}
+                                                className="truncate"
+                                            >
+                                                {
+                                                    point.label
+                                                }
+                                            </span>
+                                        ))}
+                                </div>
+                            </>
+                        ) : (
+                            <EmptyState message="No revenue movement was recorded for this period." />
+                        )}
                     </div>
 
                     <div className="rounded-2xl border border-white/[0.07] bg-[#070912] p-5 shadow-[0_18px_50px_rgba(0,0,0,.28)]">
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e7b23c]">
-                                    Live Activity
+                                    Live Snapshot
                                 </p>
 
                                 <h2 className="mt-1 text-xl font-black">
-                                    Recent events
+                                    Current platform state
                                 </h2>
                             </div>
 
@@ -620,34 +773,34 @@ const AdminDashboard = () => {
                         </div>
 
                         <div className="mt-5 space-y-3">
-                            {recentActivity.map(
-                                activity => (
+                            {snapshots.map(
+                                item => (
                                     <article
-                                        key={`${activity.title}-${activity.time}`}
+                                        key={`${item.title}-${item.time}`}
                                         className="flex gap-3 rounded-xl border border-white/[0.06] bg-white/[0.025] p-3.5 transition hover:border-[#e7b23c]/20 hover:bg-[#e7b23c]/[0.035]"
                                     >
                                         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#e7b23c]/15 bg-[#e7b23c]/[0.06] text-[#f2c75d]">
                                             {
-                                                activity.icon
+                                                item.icon
                                             }
                                         </div>
 
                                         <div className="min-w-0">
                                             <h3 className="text-sm font-bold text-white/85">
                                                 {
-                                                    activity.title
+                                                    item.title
                                                 }
                                             </h3>
 
                                             <p className="mt-1 text-xs leading-5 text-white/35">
                                                 {
-                                                    activity.description
+                                                    item.description
                                                 }
                                             </p>
 
                                             <p className="mt-1.5 text-[10px] font-semibold text-[#e7b23c]/60">
                                                 {
-                                                    activity.time
+                                                    item.time
                                                 }
                                             </p>
                                         </div>
@@ -677,57 +830,20 @@ const AdminDashboard = () => {
                             />
                         </div>
 
-                        <div className="mt-4 rounded-xl border border-amber-400/10 bg-amber-400/[0.025] px-4 py-3">
-                            <p className="text-xs leading-5 text-amber-100/55">
-                                Game analytics are
-                                currently preview data
-                                until the games collection
-                                and analytics API are
-                                connected.
-                            </p>
-                        </div>
-
-                        <div className="mt-5 space-y-4">
-                            {topGames.map(game => (
-                                <div
-                                    key={game.name}
-                                    className="rounded-xl border border-white/[0.06] bg-black/20 p-4"
-                                >
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div>
-                                            <h3 className="text-sm font-bold text-white/85">
-                                                {
-                                                    game.name
-                                                }
-                                            </h3>
-
-                                            <p className="mt-1 text-xs text-white/35">
-                                                {
-                                                    game.players
-                                                }{" "}
-                                                active
-                                                players
-                                            </p>
-                                        </div>
-
-                                        <p className="text-sm font-black text-[#f0c34f]">
-                                            {
-                                                game.revenue
-                                            }
-                                        </p>
-                                    </div>
-
-                                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-                                        <div
-                                            style={{
-                                                width: `${game.percentage}%`,
-                                            }}
-                                            className="h-full rounded-full bg-gradient-to-r from-[#a86b0d] via-[#e2ad32] to-[#ffe687]"
-                                        />
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+                        {topGames.length ? (
+                            <div className="mt-5 space-y-4">
+                                {topGames.map(game => (
+                                    <GamePerformanceCard
+                                        key={
+                                            game.game_id
+                                        }
+                                        game={game}
+                                    />
+                                ))}
+                            </div>
+                        ) : (
+                            <EmptyState message="No game plays were recorded for this period." />
+                        )}
                     </div>
 
                     <div className="rounded-2xl border border-white/[0.07] bg-[#070912] p-5">
@@ -742,11 +858,12 @@ const AdminDashboard = () => {
                         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
                             <QuickAction
                                 title="Manage Players"
-                                description="View accounts, statuses and profiles."
+                                description={`${formatNumber(
+                                    overview.users
+                                        .total_players,
+                                )} players currently registered.`}
                                 icon={
-                                    <Users
-                                        size={19}
-                                    />
+                                    <Users size={19} />
                                 }
                                 onClick={() =>
                                     navigate(
@@ -756,23 +873,19 @@ const AdminDashboard = () => {
                             />
 
                             <QuickAction
-                                title="Review Admin Requests"
-                                description="Approve or reject pending applications."
-                                icon={
-                                    <ShieldCheck
-                                        size={19}
-                                    />
-                                }
-                                onClick={() =>
-                                    navigate(
-                                        "/admin/requests",
-                                    )
-                                }
+                                title="Manage Coin Packages"
+                                description="Create and manage recharge packages, pricing, and bonus coin offers."
+                                icon={<ShieldCheck size={19} />}
+                                onClick={() => navigate("/admin/recharge")}
                             />
 
                             <QuickAction
                                 title="Monitor Transactions"
-                                description="Inspect recharge and wallet activity."
+                                description={`${formatNumber(
+                                    overview
+                                        .transactions
+                                        .total_transactions,
+                                )} transaction(s) in the selected period.`}
                                 icon={
                                     <WalletCards
                                         size={19}
@@ -787,7 +900,13 @@ const AdminDashboard = () => {
 
                             <QuickAction
                                 title="Manage Games"
-                                description="Configure supported gaming worlds."
+                                description={`${formatNumber(
+                                    games.summary
+                                        .published_games,
+                                )} of ${formatNumber(
+                                    games.summary
+                                        .total_games,
+                                )} games are published.`}
                                 icon={
                                     <Gamepad2
                                         size={19}
@@ -806,13 +925,13 @@ const AdminDashboard = () => {
                 <footer className="mt-6 flex flex-col gap-2 border-t border-white/[0.06] py-5 text-xs text-white/25 sm:flex-row sm:items-center sm:justify-between">
                     <span>
                         Dashboard generated from live
-                        GoldenSweep account data.
+                        GoldenSweep database analytics.
                     </span>
 
                     <span>
                         Last updated:{" "}
                         {formatDateTime(
-                            dashboard.generated_at,
+                            overview.generated_at,
                         )}
                     </span>
                 </footer>
@@ -837,11 +956,10 @@ const StatCard = ({
                 </div>
 
                 <span
-                    className={`flex items-center gap-1 text-[10px] font-black ${
-                        positive
+                    className={`flex items-center gap-1 text-[10px] font-black ${positive
                             ? "text-emerald-300"
                             : "text-orange-300"
-                    }`}
+                        }`}
                 >
                     {positive ? (
                         <ArrowUpRight
@@ -873,12 +991,12 @@ const Metric = ({
     label,
     value,
     change,
-    positive = false,
+    positive,
 }: {
     label: string
     value: string
     change: string
-    positive?: boolean
+    positive: boolean
 }) => {
     return (
         <div className="rounded-xl border border-white/[0.06] bg-black/20 p-4">
@@ -891,13 +1009,86 @@ const Metric = ({
             </p>
 
             <p
-                className={`mt-1 text-xs font-bold ${
-                    positive
+                className={`mt-1 text-xs font-bold ${positive
                         ? "text-emerald-300"
                         : "text-orange-300"
-                }`}
+                    }`}
             >
                 {change}
+            </p>
+        </div>
+    )
+}
+
+
+const GamePerformanceCard = ({
+    game,
+}: {
+    game: GamePerformanceItem
+}) => {
+    const percentage = Math.min(
+        Math.max(
+            game.percentage_of_total_plays,
+            0,
+        ),
+        100,
+    )
+
+    return (
+        <div className="rounded-xl border border-white/[0.06] bg-black/20 p-4">
+            <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                    <h3 className="truncate text-sm font-bold text-white/85">
+                        {game.name}
+                    </h3>
+
+                    <p className="mt-1 text-xs capitalize text-white/35">
+                        {game.category}
+                        {" · "}
+                        {game.provider_name ||
+                            "Internal"}
+                    </p>
+                </div>
+
+                <div className="shrink-0 text-right">
+                    <p className="text-sm font-black text-[#f0c34f]">
+                        {formatNumber(
+                            game.play_count,
+                        )}{" "}
+                        plays
+                    </p>
+
+                    <p className="mt-1 text-[10px] text-white/30">
+                        {formatPercentage(
+                            game.percentage_of_total_plays,
+                        )}{" "}
+                        share
+                    </p>
+                </div>
+            </div>
+
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                <div
+                    style={{
+                        width: `${percentage}%`,
+                    }}
+                    className="h-full rounded-full bg-gradient-to-r from-[#a86b0d] via-[#e2ad32] to-[#ffe687]"
+                />
+            </div>
+        </div>
+    )
+}
+
+
+const EmptyState = ({
+    message,
+}: {
+    message: string
+}) => {
+    return (
+        <div className="mt-5 rounded-xl border border-dashed border-white/[0.08] bg-black/20 px-5 py-10 text-center">
+            <p className="text-sm font-semibold text-white/35">
+                {message}
             </p>
         </div>
     )

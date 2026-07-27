@@ -289,103 +289,55 @@ class GameRepository:
         }
 
     async def statistics(self) -> dict[str, int]:
-        pipeline = [
+        total_games = await self.collection.count_documents({})
+    
+        published_games = await self.collection.count_documents(
+            {"status": "published"}
+        )
+        draft_games = await self.collection.count_documents(
+            {"status": "draft"}
+        )
+        maintenance_games = await self.collection.count_documents(
+            {"status": "maintenance"}
+        )
+        disabled_games = await self.collection.count_documents(
+            {"status": "disabled"}
+        )
+        featured_games = await self.collection.count_documents(
+            {"is_featured": True}
+        )
+        landing_page_games = await self.collection.count_documents(
+            {"show_on_landing_page": True}
+        )
+    
+        total_play_count = 0
+    
+        cursor = self.collection.find(
+            {},
             {
-                "$group": {
-                    "_id": None,
-                    "total_games": {"$sum": 1},
-                    "published_games": {
-                        "$sum": {
-                            "$cond": [
-                                {"$eq": ["$status", "published"]},
-                                1,
-                                0,
-                            ]
-                        }
-                    },
-                    "draft_games": {
-                        "$sum": {
-                            "$cond": [
-                                {"$eq": ["$status", "draft"]},
-                                1,
-                                0,
-                            ]
-                        }
-                    },
-                    "maintenance_games": {
-                        "$sum": {
-                            "$cond": [
-                                {
-                                    "$eq": [
-                                        "$status",
-                                        "maintenance",
-                                    ]
-                                },
-                                1,
-                                0,
-                            ]
-                        }
-                    },
-                    "disabled_games": {
-                        "$sum": {
-                            "$cond": [
-                                {"$eq": ["$status", "disabled"]},
-                                1,
-                                0,
-                            ]
-                        }
-                    },
-                    "featured_games": {
-                        "$sum": {
-                            "$cond": [
-                                {"$eq": ["$is_featured", True]},
-                                1,
-                                0,
-                            ]
-                        }
-                    },
-                    "landing_page_games": {
-                        "$sum": {
-                            "$cond": [
-                                {
-                                    "$eq": [
-                                        "$show_on_landing_page",
-                                        True,
-                                    ]
-                                },
-                                1,
-                                0,
-                            ]
-                        }
-                    },
-                    "total_play_count": {
-                        "$sum": {
-                            "$ifNull": ["$play_count", 0]
-                        }
-                    },
-                }
-            }
-        ]
-
-        rows = await self.collection.aggregate(
-            pipeline
-        ).to_list(length=1)
-
-        if not rows:
-            return {
-                "total_games": 0,
-                "published_games": 0,
-                "draft_games": 0,
-                "maintenance_games": 0,
-                "disabled_games": 0,
-                "featured_games": 0,
-                "landing_page_games": 0,
-                "total_play_count": 0,
-            }
-
-        result = rows[0]
-        result.pop("_id", None)
-        return result
+                "_id": 0,
+                "play_count": 1,
+            },
+        )
+    
+        async for document in cursor:
+            value = document.get("play_count", 0)
+    
+            try:
+                total_play_count += max(int(value or 0), 0)
+            except (TypeError, ValueError, OverflowError):
+                continue
+            
+        return {
+            "total_games": int(total_games),
+            "published_games": int(published_games),
+            "draft_games": int(draft_games),
+            "maintenance_games": int(maintenance_games),
+            "disabled_games": int(disabled_games),
+            "featured_games": int(featured_games),
+            "landing_page_games": int(landing_page_games),
+            "total_play_count": total_play_count,
+        }
 
 
 __all__ = ["GameRepository"]

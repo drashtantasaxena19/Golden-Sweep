@@ -43,6 +43,7 @@ interface Profile {
     language: string
     avatar: string
     verified: boolean
+    role: string
     createdAt?: string
 }
 
@@ -56,6 +57,7 @@ const emptyProfile: Profile = {
     language: "English",
     avatar: "",
     verified: false,
+    role: "player",
 }
 
 const ProfilePage = () => {
@@ -96,6 +98,7 @@ const ProfilePage = () => {
                     language: data.preferred_language || "English",
                     avatar: data.avatar_url || "",
                     verified: data.email_verified,
+                    role: data.role || "player",
                     createdAt: data.created_at,
                 }
                 setProfile(normalized)
@@ -158,6 +161,20 @@ const ProfilePage = () => {
             year: "numeric",
         })
     }, [profile.createdAt])
+
+    const normalizedRole =
+        profile.role.trim().toLowerCase()
+
+    const isAdministrator =
+        normalizedRole === "admin" ||
+        normalizedRole === "super_admin"
+
+    const accountRoleLabel =
+        normalizedRole === "super_admin"
+            ? "Super Administrator"
+            : normalizedRole === "admin"
+                ? "Administrator"
+                : "Player Account"
 
     const handleAvatar = (
         event: React.ChangeEvent<HTMLInputElement>
@@ -341,7 +358,7 @@ const ProfilePage = () => {
 
                             <p className="mt-2 max-w-2xl text-sm leading-6 text-white/45">
                                 Manage your profile, account security,
-                                verification status and GoldenSweep experience
+                                verification status and GoldenSweep access
                                 from one place.
                             </p>
                         </div>
@@ -447,7 +464,7 @@ const ProfilePage = () => {
 
                                     <div className="mt-4 flex items-center gap-2 rounded-full border border-gold-400/15 bg-gold-400/[0.04] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-gold-300">
                                         <ShieldCheck size={13} />
-                                        Player Account
+                                        {accountRoleLabel}
                                     </div>
 
                                     <div className="mt-6 w-full">
@@ -519,20 +536,30 @@ const ProfilePage = () => {
                         </aside>
 
                         <div className="space-y-6">
-                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                <SummaryCard
-                                    icon={<WalletCards size={22} />}
-                                    label="Available Balance"
-                                    value={loadingProfile ? "..." : "0 GC"}
-                                    note="Golden Credits"
-                                />
+                            <div
+                                className={`grid gap-4 sm:grid-cols-2 ${
+                                    isAdministrator
+                                        ? "lg:grid-cols-2"
+                                        : "lg:grid-cols-3"
+                                }`}
+                            >
+                                {!isAdministrator && (
+                                    <>
+                                        <SummaryCard
+                                            icon={<WalletCards size={22} />}
+                                            label="Available Balance"
+                                            value={loadingProfile ? "..." : "0 GC"}
+                                            note="Golden Credits"
+                                        />
 
-                                <SummaryCard
-                                    icon={<CircleDollarSign size={22} />}
-                                    label="Recharge Activity"
-                                    value="0"
-                                    note="Requests completed"
-                                />
+                                        <SummaryCard
+                                            icon={<CircleDollarSign size={22} />}
+                                            label="Recharge Activity"
+                                            value="0"
+                                            note="Requests completed"
+                                        />
+                                    </>
+                                )}
 
                                 <SummaryCard
                                     icon={<Clock3 size={22} />}
@@ -540,6 +567,15 @@ const ProfilePage = () => {
                                     value={memberSince}
                                     note="GoldenSweep member"
                                 />
+
+                                {isAdministrator && (
+                                    <SummaryCard
+                                        icon={<ShieldCheck size={22} />}
+                                        label="Account Role"
+                                        value={accountRoleLabel}
+                                        note="Administrative access"
+                                    />
+                                )}
                             </div>
 
                             <section className="overflow-hidden rounded-[26px] border border-white/[0.08] bg-[linear-gradient(145deg,rgba(8,9,17,.95),rgba(9,7,18,.94))]">

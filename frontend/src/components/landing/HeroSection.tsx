@@ -376,7 +376,7 @@ const HeroSection = () => {
                     "
                 >
                     <a
-                        href="#get-started"
+                        href="signup"
                         className="
                             relative
                             flex

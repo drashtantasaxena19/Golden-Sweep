@@ -19,6 +19,7 @@ import GamesList from "./pages/Games/GamesList";
 import CreateGame from "./pages/Games/CreateGame";
 import EditGame from "./pages/Games/EditGame";
 import GameDetails from "./pages/Games/GameDetails";
+import AdminAnalytics from "./pages/admin/AdminAnalytics";
 
 import ForgotPasswordPage from "./pages/auth/ForgotPasswordPage"
 import LoginPage from "./pages/auth/LoginPage"
@@ -32,6 +33,9 @@ import PrivacyPage from "./pages/public/PrivacyPage"
 import ResponsibleGamingPage from "./pages/public/ResponsibleGamingPage"
 import SupportPage from "./pages/public/SupportPage"
 import TermsPage from "./pages/public/TermsPage"
+import GamePlayerPage from "./pages/Games/GamePlayerPage"
+import ProtectedGameRoute from "./routes/ProtectedGameRoute"
+
 
 import AdminRoute from "./routes/AdminRoute"
 
@@ -74,6 +78,14 @@ const App = () => {
           }
         />
 
+        <Route
+          path="/games/:slug"
+          element={
+            <ProtectedGameRoute>
+              <GamePlayerPage />
+            </ProtectedGameRoute>
+          }
+        />
         <Route
           path="/verify-email"
           element={<VerifyEmailPage />}
@@ -153,6 +165,10 @@ const App = () => {
             <Route
               path="games/:gameId/edit"
               element={<EditGame />}
+            />
+            <Route
+              path="analytics"
+              element={<AdminAnalytics />}
             />
           </Route>
         </Route>

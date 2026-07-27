@@ -18,7 +18,7 @@ interface ApiRequestOptions extends RequestInit {
 }
 
 interface ApiErrorBody {
-    detail?: string
+    detail?: string | unknown[]
     message?: string
 }
 
@@ -37,13 +37,8 @@ export class ApiError extends Error {
     status: number
     data?: unknown
 
-    constructor(
-        message: string,
-        status: number,
-        data?: unknown,
-    ) {
+    constructor(message: string, status: number, data?: unknown) {
         super(message)
-
         this.name = "ApiError"
         this.status = status
         this.data = data
@@ -52,15 +47,14 @@ export class ApiError extends Error {
 
 let refreshPromise: Promise<boolean> | null = null
 
-const buildApiUrl = (path: string): string => {
+export const buildApiUrl = (path: string): string => {
     let normalizedPath = path.trim()
 
     if (!normalizedPath.startsWith("/")) {
         normalizedPath = `/${normalizedPath}`
     }
 
-    const baseEndsWithApi =
-        API_BASE_URL.toLowerCase().endsWith("/api")
+    const baseEndsWithApi = API_BASE_URL.toLowerCase().endsWith("/api")
 
     if (
         baseEndsWithApi &&
@@ -79,9 +73,7 @@ const buildApiUrl = (path: string): string => {
     return `${API_BASE_URL}${normalizedPath}`
 }
 
-const parseResponse = async (
-    response: Response,
-): Promise<unknown> => {
+const parseResponse = async (response: Response): Promise<unknown> => {
     if (
         response.status === 204 ||
         response.headers.get("content-length") === "0"
@@ -89,8 +81,7 @@ const parseResponse = async (
         return null
     }
 
-    const contentType =
-        response.headers.get("content-type") || ""
+    const contentType = response.headers.get("content-type") || ""
 
     if (contentType.includes("application/json")) {
         try {
@@ -107,10 +98,7 @@ const parseResponse = async (
     }
 }
 
-const getErrorMessage = (
-    data: unknown,
-    fallback: string,
-): string => {
+const getErrorMessage = (data: unknown, fallback: string): string => {
     if (typeof data === "string" && data.trim()) {
         return data
     }
@@ -118,16 +106,11 @@ const getErrorMessage = (
     if (data && typeof data === "object") {
         const body = data as ApiErrorBody
 
-        if (
-            typeof body.detail === "string" &&
-            body.detail.trim()
-        ) {
+        if (typeof body.detail === "string" && body.detail.trim()) {
             return body.detail
         }
 
-        if (
-            Array.isArray(body.detail)
-        ) {
+        if (Array.isArray(body.detail)) {
             return body.detail
                 .map((item) => {
                     if (
@@ -143,11 +126,25 @@ const getErrorMessage = (
                 .join("\n")
         }
 
-        if (
-            typeof body.message === "string" &&
-            body.message.trim()
-        ) {
+        if (typeof body.message === "string" && body.message.trim()) {
             return body.message
+        }
+
+        if (
+            body.detail &&
+            typeof body.detail === "object" &&
+            "message" in body.detail
+        ) {
+            const nestedMessage = (
+                body.detail as { message?: unknown }
+            ).message
+
+            if (
+                typeof nestedMessage === "string" &&
+                nestedMessage.trim()
+            ) {
+                return nestedMessage
+            }
         }
     }
 
@@ -235,30 +232,24 @@ const createHeaders = (
         body !== null &&
         !(body instanceof FormData)
     ) {
-        finalHeaders.set(
-            "Content-Type",
-            "application/json",
-        )
+        finalHeaders.set("Content-Type", "application/json")
     }
 
     if (!skipAuth) {
         const token = getAccessToken()
 
         if (token) {
-            finalHeaders.set(
-                "Authorization",
-                `Bearer ${token}`,
-            )
+            finalHeaders.set("Authorization", `Bearer ${token}`)
         }
     }
 
     return finalHeaders
 }
 
-export const apiRequest = async <T>(
+export const apiFetch = async (
     path: string,
     options: ApiRequestOptions = {},
-): Promise<T> => {
+): Promise<Response> => {
     const {
         skipAuth = false,
         skipRefresh = false,
@@ -320,13 +311,18 @@ export const apiRequest = async <T>(
         }
     }
 
+    return response
+}
+
+export const apiRequest = async <T>(
+    path: string,
+    options: ApiRequestOptions = {},
+): Promise<T> => {
+    const response = await apiFetch(path, options)
     const data = await parseResponse(response)
 
     if (!response.ok) {
-        if (
-            response.status === 401 &&
-            !skipAuth
-        ) {
+        if (response.status === 401 && !options.skipAuth) {
             clearAuth()
         }
 

@@ -1,7 +1,7 @@
-import {
+﻿import {
     ChevronDown,
     CircleDollarSign,
-    Globe2,
+    LayoutDashboard,
     LogOut,
     Menu,
     User,
@@ -103,7 +103,6 @@ const Navbar = () => {
         try {
             await authService.logout()
         } catch {
-            // Local logout still proceeds if the server is unavailable.
         } finally {
             clearAuth()
             setAuthenticated(false)
@@ -185,6 +184,24 @@ const Navbar = () => {
             .map(part => part.charAt(0).toUpperCase())
             .join("") || "GS"
 
+    const normalizedRole =
+        profile?.role?.trim().toLowerCase() || ""
+
+    const isAdministrator =
+        normalizedRole === "admin" ||
+        normalizedRole === "super_admin"
+
+    const accountDestination =
+        isAdministrator
+            ? "/admin"
+            : "/profile"
+    const accountLabel =
+        normalizedRole === "super_admin"
+            ? "Super Admin Panel"
+            : normalizedRole === "admin"
+                ? "Admin Dashboard"
+                : "My Account"
+
     return (
         <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.06] bg-[#02030a]/95 backdrop-blur-xl">
             <div className="mx-auto flex h-[80px] w-full max-w-[1600px] items-center justify-between px-5 lg:px-8 xl:px-10">
@@ -225,8 +242,8 @@ const Navbar = () => {
                                     )
                                 }
                                 className={`relative flex h-full items-center text-[14px] font-semibold uppercase tracking-[0.025em] transition-colors duration-300 ${active
-                                        ? "text-[#ffd05a]"
-                                        : "text-white/80 hover:text-[#ffd05a]"
+                                    ? "text-[#ffd05a]"
+                                    : "text-white/80 hover:text-[#ffd05a]"
                                     }`}
                             >
                                 {item.label}
@@ -243,29 +260,6 @@ const Navbar = () => {
                 </nav>
 
                 <div className="hidden shrink-0 items-center gap-3 lg:flex">
-                    <button
-                        type="button"
-                        className="flex h-[44px] items-center gap-2 rounded-[13px] border border-white/10 bg-[#060812]/90 px-4 text-[13px] font-semibold text-white/90 transition hover:border-[#d9a928]/45"
-                    >
-                        <Globe2
-                            size={15}
-                            className="text-[#e3bd51]"
-                        />
-
-                        <span>EN</span>
-
-                        <ChevronDown
-                            size={14}
-                            className="text-[#d5aa42]"
-                        />
-                    </button>
-
-                    <button
-                        type="button"
-                        className="px-2 text-[13px] font-medium text-white/35 transition hover:text-[#f4c34c]"
-                    >
-                        ES
-                    </button>
 
                     {!authenticated ? (
                         <>
@@ -285,25 +279,44 @@ const Navbar = () => {
                         </>
                     ) : (
                         <>
-                            <Link
-                                to="/profile"
-                                className="flex h-[46px] items-center gap-2 rounded-[13px] border border-gold-400/20 bg-gold-400/[0.035] px-4"
-                            >
-                                <WalletCards
-                                    size={17}
-                                    className="text-gold-400"
-                                />
+                            {isAdministrator ? (
+                                <Link
+                                    to={accountDestination}
+                                    className="flex h-[46px] items-center gap-2 rounded-[13px] border border-[#d9a928]/40 bg-[#d9a928]/[0.08] px-4 text-[#f4c34c] transition hover:border-[#ffd05a]/70 hover:bg-[#d9a928]/[0.14]"
+                                >
+                                    <LayoutDashboard size={17} />
 
-                                <div>
-                                    <p className="text-[9px] uppercase tracking-wider text-white/30">
-                                        Balance
-                                    </p>
+                                    <div>
+                                        <p className="text-[9px] uppercase tracking-wider text-white/35">
+                                            Administration
+                                        </p>
 
-                                    <p className="text-xs font-black text-white">
-                                        1,250 GC
-                                    </p>
-                                </div>
-                            </Link>
+                                        <p className="text-xs font-black text-white">
+                                            {accountLabel}
+                                        </p>
+                                    </div>
+                                </Link>
+                            ) : (
+                                <Link
+                                    to="/profile"
+                                    className="flex h-[46px] items-center gap-2 rounded-[13px] border border-gold-400/20 bg-gold-400/[0.035] px-4"
+                                >
+                                    <WalletCards
+                                        size={17}
+                                        className="text-gold-400"
+                                    />
+
+                                    <div>
+                                        <p className="text-[9px] uppercase tracking-wider text-white/30">
+                                            Balance
+                                        </p>
+
+                                        <p className="text-xs font-black text-white">
+                                            1,250 GC
+                                        </p>
+                                    </div>
+                                </Link>
+                            )}
 
                             <div
                                 ref={profileMenuRef}
@@ -336,8 +349,8 @@ const Navbar = () => {
                                     <ChevronDown
                                         size={14}
                                         className={`text-gold-400/70 transition ${profileOpen
-                                                ? "rotate-180"
-                                                : ""
+                                            ? "rotate-180"
+                                            : ""
                                             }`}
                                     />
                                 </button>
@@ -355,6 +368,21 @@ const Navbar = () => {
                                             </p>
                                         </div>
 
+                                        {isAdministrator && (
+                                            <MenuLink
+                                                to={accountDestination}
+                                                icon={
+                                                    <LayoutDashboard
+                                                        size={16}
+                                                    />
+                                                }
+                                                label={accountLabel}
+                                                onClick={() =>
+                                                    setProfileOpen(false)
+                                                }
+                                            />
+                                        )}
+
                                         <MenuLink
                                             to="/profile"
                                             icon={<User size={16} />}
@@ -364,18 +392,24 @@ const Navbar = () => {
                                             }
                                         />
 
-                                        <MenuLink
-                                            to="/profile"
-                                            icon={
-                                                <WalletCards
-                                                    size={16}
-                                                />
-                                            }
-                                            label="Wallet"
-                                            onClick={() =>
-                                                setProfileOpen(false)
-                                            }
-                                        />
+                                        {!isAdministrator && (
+
+
+                                            <MenuLink
+                                                to="/profile"
+                                                icon={
+                                                    <WalletCards
+                                                        size={16}
+                                                    />
+                                                }
+                                                label="Wallet"
+                                                onClick={() =>
+                                                    setProfileOpen(false)
+                                                }
+                                            />
+
+
+                                        )}
 
                                         <button
                                             type="button"
@@ -430,14 +464,20 @@ const Navbar = () => {
                         {authenticated ? (
                             <div className="mt-5 space-y-3">
                                 <Link
-                                    to="/profile"
+                                    to={accountDestination}
                                     onClick={() =>
                                         setMenuOpen(false)
                                     }
                                     className="flex items-center gap-3 rounded-xl border border-gold-400/20 bg-gold-400/[0.035] p-3"
                                 >
                                     <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-gold-400/25 text-xs font-black text-gold-300">
-                                        {initials}
+                                        {isAdministrator ? (
+                                            <LayoutDashboard
+                                                size={18}
+                                            />
+                                        ) : (
+                                            initials
+                                        )}
                                     </div>
 
                                     <div>
@@ -447,7 +487,9 @@ const Navbar = () => {
                                         </p>
 
                                         <p className="text-xs text-gold-300">
-                                            1,250 GC
+                                            {isAdministrator
+                                                ? accountLabel
+                                                : "My Account"}
                                         </p>
                                     </div>
                                 </Link>

@@ -7,9 +7,15 @@ import type {
   TransactionStatistics,
 } from "../types/transaction";
 
-const API_BASE_URL =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ||
+const RAW_API_BASE_URL =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ||
   "http://127.0.0.1:8000";
+
+const NORMALIZED_API_BASE_URL = RAW_API_BASE_URL.replace(/\/+$/, "");
+
+const API_BASE_URL = NORMALIZED_API_BASE_URL.endsWith("/api")
+  ? NORMALIZED_API_BASE_URL
+  : `${NORMALIZED_API_BASE_URL}/api`;
 
 function getAuthToken(): string | null {
   return (
@@ -22,8 +28,9 @@ function getAuthToken(): string | null {
 
 async function request<T>(path: string): Promise<T> {
   const token = getAuthToken();
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${API_BASE_URL}${normalizedPath}`, {
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -35,14 +42,36 @@ async function request<T>(path: string): Promise<T> {
 
     try {
       const contentType = response.headers.get("content-type") || "";
+
       if (contentType.includes("application/json")) {
         const payload = (await response.json()) as {
-          detail?: string;
+          detail?:
+            | string
+            | Array<{
+                loc?: Array<string | number>;
+                msg?: string;
+                type?: string;
+              }>;
           message?: string;
         };
-        message = payload.detail || payload.message || message;
+
+        if (typeof payload.detail === "string") {
+          message = payload.detail;
+        } else if (Array.isArray(payload.detail)) {
+          message = payload.detail
+            .map((error) => {
+              const location = error.loc?.join(".") || "request";
+              return `${location}: ${error.msg || "Invalid value"}`;
+            })
+            .join(", ");
+        } else if (payload.message) {
+          message = payload.message;
+        }
       } else {
-        message = (await response.text()) || message;
+        message =
+          (await response.text()) ||
+          response.statusText ||
+          message;
       }
     } catch {
       message = response.statusText || message;
@@ -51,13 +80,38 @@ async function request<T>(path: string): Promise<T> {
     throw new Error(message);
   }
 
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const contentType = response.headers.get("content-type") || "";
+
+  if (!contentType.includes("application/json")) {
+    const text = await response.text();
+
+    throw new Error(
+      `Expected JSON response but received ${
+        contentType || "unknown content type"
+      }. Response: ${text.slice(0, 120)}`,
+    );
+  }
+
   return (await response.json()) as T;
 }
 
 function dateToIso(value: string, endOfDay = false): string {
-  if (!value) return "";
+  if (!value) {
+    return "";
+  }
 
-  const date = new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}`);
+  const date = new Date(
+    `${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}`,
+  );
+
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Invalid date value: ${value}`);
+  }
+
   return date.toISOString();
 }
 
@@ -72,20 +126,26 @@ const transactionService = {
       limit: String(limit),
     });
 
-    if (filters.search.trim()) {
-      params.set("search", filters.search.trim());
+    const search = filters.search?.trim();
+
+    if (search) {
+      params.set("search", search);
     }
 
     if (filters.transactionType) {
       params.set("transaction_type", filters.transactionType);
     }
 
-    if (filters.minimumAmount.trim()) {
-      params.set("minimum_amount", filters.minimumAmount.trim());
+    const minimumAmount = filters.minimumAmount?.trim();
+
+    if (minimumAmount) {
+      params.set("minimum_amount", minimumAmount);
     }
 
-    if (filters.maximumAmount.trim()) {
-      params.set("maximum_amount", filters.maximumAmount.trim());
+    const maximumAmount = filters.maximumAmount?.trim();
+
+    if (maximumAmount) {
+      params.set("maximum_amount", maximumAmount);
     }
 
     if (filters.startDate) {
@@ -97,12 +157,14 @@ const transactionService = {
     }
 
     return request<TransactionListResponse>(
-      `/api/admin/transactions?${params.toString()}`,
+      `/admin/transactions?${params.toString()}`,
     );
   },
 
   getTransaction(transactionId: string): Promise<Transaction> {
-    return request<Transaction>(`/api/admin/transactions/${transactionId}`);
+    return request<Transaction>(
+      `/admin/transactions/${encodeURIComponent(transactionId)}`,
+    );
   },
 
   getStatistics(
@@ -111,12 +173,18 @@ const transactionService = {
   ): Promise<TransactionStatistics> {
     const params = new URLSearchParams();
 
-    if (startDate) params.set("start_date", dateToIso(startDate));
-    if (endDate) params.set("end_date", dateToIso(endDate, true));
+    if (startDate) {
+      params.set("start_date", dateToIso(startDate));
+    }
+
+    if (endDate) {
+      params.set("end_date", dateToIso(endDate, true));
+    }
 
     const query = params.toString();
+
     return request<TransactionStatistics>(
-      `/api/admin/transactions/statistics${query ? `?${query}` : ""}`,
+      `/admin/transactions/statistics${query ? `?${query}` : ""}`,
     );
   },
 
@@ -126,12 +194,18 @@ const transactionService = {
   ): Promise<TransactionBreakdownResponse> {
     const params = new URLSearchParams();
 
-    if (startDate) params.set("start_date", dateToIso(startDate));
-    if (endDate) params.set("end_date", dateToIso(endDate, true));
+    if (startDate) {
+      params.set("start_date", dateToIso(startDate));
+    }
+
+    if (endDate) {
+      params.set("end_date", dateToIso(endDate, true));
+    }
 
     const query = params.toString();
+
     return request<TransactionBreakdownResponse>(
-      `/api/admin/transactions/type-breakdown${query ? `?${query}` : ""}`,
+      `/admin/transactions/type-breakdown${query ? `?${query}` : ""}`,
     );
   },
 
@@ -139,13 +213,20 @@ const transactionService = {
     startDate?: string,
     endDate?: string,
   ): Promise<TransactionDailyTrendResponse> {
-    const params = new URLSearchParams({ limit: "30" });
+    const params = new URLSearchParams({
+      limit: "30",
+    });
 
-    if (startDate) params.set("start_date", dateToIso(startDate));
-    if (endDate) params.set("end_date", dateToIso(endDate, true));
+    if (startDate) {
+      params.set("start_date", dateToIso(startDate));
+    }
+
+    if (endDate) {
+      params.set("end_date", dateToIso(endDate, true));
+    }
 
     return request<TransactionDailyTrendResponse>(
-      `/api/admin/transactions/daily-trend?${params.toString()}`,
+      `/admin/transactions/daily-trend?${params.toString()}`,
     );
   },
 };

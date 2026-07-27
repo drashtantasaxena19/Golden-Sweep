@@ -308,4 +308,5 @@ class GameApi {
 }
 
 export const gameApi = new GameApi();
+
 export default gameApi;

@@ -24,23 +24,13 @@ class GameService {
         return gameApi.getAdminGame(gameId);
     }
 
-    /**
-     * Creates a draft. The backend publishes it automatically after the
-     * required logo is successfully uploaded and the game passes validation.
-     */
     createGame(payload: GameCreate) {
         return gameApi.createGame(payload);
     }
 
-    /**
-     * Complete create flow:
-     * 1. Create draft
-     * 2. Upload required logo and any optional images
-     * 3. Receive the automatically updated/published game
-     */
     async createGameWithImages(
         payload: GameCreate,
-        files: NewGameImageFiles
+        files: NewGameImageFiles,
     ): Promise<GameCreateResult> {
         const draft = await gameApi.createGame(payload);
         const upload = await gameApi.uploadGameImages(draft.id, files);
@@ -78,29 +68,35 @@ class GameService {
     uploadGameImage(
         gameId: string,
         imageType: GameImageType,
-        file: File
+        file: File,
     ) {
         return gameApi.uploadGameImage(gameId, imageType, file);
     }
 
-    uploadGameImages(gameId: string, files: GameImageFiles) {
+    uploadGameImages(
+        gameId: string,
+        files: GameImageFiles,
+    ) {
         return gameApi.uploadGameImages(gameId, files);
     }
 
-    replaceGameImages(gameId: string, files: GameImageFiles) {
+    replaceGameImages(
+        gameId: string,
+        files: GameImageFiles,
+    ) {
         return gameApi.uploadGameImages(gameId, files);
     }
 
     getGameImageMetadata(
         gameId: string,
-        imageType: GameImageType
+        imageType: GameImageType,
     ) {
         return gameApi.getGameImageMetadata(gameId, imageType);
     }
 
     deleteGameImage(
         gameId: string,
-        imageType: GameImageType
+        imageType: GameImageType,
     ) {
         return gameApi.deleteGameImage(gameId, imageType);
     }
@@ -119,18 +115,18 @@ class GameService {
 
     bulkFeatureGames(
         gameIds: string[],
-        isFeatured: boolean
+        isFeatured: boolean,
     ) {
         return gameApi.bulkFeatureGames(gameIds, isFeatured);
     }
 
     bulkLandingPageUpdate(
         gameIds: string[],
-        showOnLandingPage: boolean
+        showOnLandingPage: boolean,
     ) {
         return gameApi.bulkLandingPageUpdate(
             gameIds,
-            showOnLandingPage
+            showOnLandingPage,
         );
     }
 
@@ -149,7 +145,9 @@ class GameService {
     registerGamePlay(gameId: string) {
         return gameApi.registerGamePlay(gameId);
     }
+    
 }
 
 export const gameService = new GameService();
+
 export default gameService;
