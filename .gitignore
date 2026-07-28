@@ -1,0 +1,85 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual Environment
+venv/
+.venv/
+env/
+ENV/
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# Python cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# =========================
+# Node / React / Vite
+# =========================
+frontend/node_modules/
+frontend/dist/
+node_modules/
+dist/
+
+# Vite
+vite.svg
+
+# =========================
+# Build
+# =========================
+build/
+coverage/
+
+# =========================
+# Mongo
+# =========================
+*.db
+*.sqlite
+*.sqlite3
+
+# =========================
+# Uploads
+# =========================
+uploads/
+media/
+temp/
+tmp/
+
+# =========================
+# Secrets
+# =========================
+*.pem
+*.key
+*.crt
+*.p12
+firebase-adminsdk*.json
+serviceAccount*.json
+
+# =========================
+# Misc
+# =========================
+*.bak
+*.old
