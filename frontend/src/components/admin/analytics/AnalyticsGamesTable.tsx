@@ -1,4 +1,4 @@
-import type { GamePerformanceItem } from "../../types/analytics";
+import type { GamePerformanceItem } from "../../../types/analytics";
 
 interface AnalyticsGamesTableProps {
   games: GamePerformanceItem[];

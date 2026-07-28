@@ -1,6 +1,5 @@
 ﻿import {
     ChevronDown,
-    CircleDollarSign,
     LayoutDashboard,
     LogOut,
     Menu,

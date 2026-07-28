@@ -258,7 +258,13 @@ export default function Users() {
         );
         setSelectedIds([]);
     };
+    const confirmDeleteUser = async (): Promise<void> => {
+        if (!selectedUser) {
+            return;
+        }
 
+        await deleteUser(selectedUser.id);
+    };
     const statCards = [
         { label: "Total Users", value: statistics.total_users },
         { label: "Players", value: statistics.player_users ?? 0 },
@@ -278,11 +284,10 @@ export default function Users() {
             {message && (
                 <div
                     role="status"
-                    className={`fixed right-4 top-4 z-[70] max-w-sm rounded-xl border px-4 py-3 text-sm font-medium shadow-xl ${
-                        message.type === "success"
-                            ? "border-emerald-400/40 bg-emerald-950 text-emerald-200"
-                            : "border-red-400/40 bg-red-950 text-red-200"
-                    }`}
+                    className={`fixed right-4 top-4 z-[70] max-w-sm rounded-xl border px-4 py-3 text-sm font-medium shadow-xl ${message.type === "success"
+                        ? "border-emerald-400/40 bg-emerald-950 text-emerald-200"
+                        : "border-red-400/40 bg-red-950 text-red-200"
+                        }`}
                 >
                     {message.text}
                 </div>
@@ -429,7 +434,7 @@ export default function Users() {
                 user={selectedUser}
                 loading={actionLoading}
                 onClose={() => setDeleteDialogOpen(false)}
-                onConfirm={(userId) => void deleteUser(userId)}
+                onConfirm={confirmDeleteUser}
             />
         </div>
     );

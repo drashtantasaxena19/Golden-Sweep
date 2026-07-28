@@ -19,7 +19,11 @@ export type GameOrientation =
     | "landscape"
     | "responsive";
 
-export type GameImageType = "logo" | "thumbnail" | "banner";
+export type GameImageType =
+    | "logo"
+    | "thumbnail"
+    | "banner";
+
 export type GameImageKind = GameImageType;
 
 export const GAME_CATEGORY_OPTIONS: readonly GameCategory[] = [
@@ -63,13 +67,19 @@ export const GAME_CATEGORY_LABELS: Record<GameCategory, string> = {
     other: "Other",
 };
 
-export const GAME_ORIENTATION_LABELS: Record<GameOrientation, string> = {
+export const GAME_ORIENTATION_LABELS: Record<
+    GameOrientation,
+    string
+> = {
     portrait: "Portrait",
     landscape: "Landscape",
     responsive: "Responsive",
 };
 
-export const GAME_IMAGE_KIND_LABELS: Record<GameImageKind, string> = {
+export const GAME_IMAGE_KIND_LABELS: Record<
+    GameImageKind,
+    string
+> = {
     logo: "Logo",
     thumbnail: "Thumbnail",
     banner: "Banner",
@@ -98,27 +108,33 @@ export interface GameCreate {
     is_desktop_supported: boolean;
 }
 
-/**
- * Fields that an administrator may edit directly.
- *
- * Status and GridFS file IDs are intentionally excluded because status is
- * managed by the backend and images are managed through multipart endpoints.
- */
 export type GameUpdate = Partial<GameCreate>;
 
-export interface GameResponse extends GameCreate {
+type NullableGameCreateFields =
+    | "provider_name"
+    | "provider_game_id"
+    | "instructions"
+    | "terms_and_conditions";
+
+export interface GameResponse
+    extends Omit<GameCreate, NullableGameCreateFields> {
     id: string;
+
     logo_file_id: string | null;
     thumbnail_file_id: string | null;
     banner_file_id: string | null;
+
     provider_name: string | null;
     provider_game_id: string | null;
     instructions: string | null;
     terms_and_conditions: string | null;
+
     status: GameStatus;
     play_count: number;
+
     created_by: string | null;
     updated_by: string | null;
+
     created_at: string;
     updated_at: string;
 }
@@ -164,7 +180,9 @@ export interface GameMultiImageUploadResponse {
     success: boolean;
     message: string | null;
     game: GameResponse;
-    images: Partial<Record<GameImageType, GameImageMetadata>>;
+    images: Partial<
+        Record<GameImageType, GameImageMetadata>
+    >;
 }
 
 export interface GameImageDeleteResponse {
@@ -179,7 +197,11 @@ export interface GameImageValidationItem {
     image_type?: GameImageType;
     field?: string;
     message?: string;
-    [key: string]: string | GameImageType | undefined;
+
+    [key: string]:
+        | string
+        | GameImageType
+        | undefined;
 }
 
 export interface GameImageValidationResponse {
@@ -200,6 +222,7 @@ export interface GameDeleteResponse {
     success: boolean;
     game_id: string;
     slug: string | null;
+
     image_cleanup: {
         deleted: string[];
         missing: string[];
@@ -240,13 +263,17 @@ export interface PublicGameFilter {
     limit?: number;
     category?: GameCategory;
     featured_only?: boolean;
+    show_on_landing_page?: boolean;
 }
 
-export type GameImageFiles = Partial<Record<GameImageType, File>>;
+export type GameImageFiles = Partial<
+    Record<GameImageType, File>
+>;
 
-export interface NewGameImageFiles extends GameImageFiles {
-    logo: File;
-}
+export type NewGameImageFiles =
+    GameImageFiles & {
+        logo: File;
+    };
 
 export interface GameCreateResult {
     game: GameResponse;

@@ -5,8 +5,6 @@ import AuthLayout from "../../components/auth/AuthLayout"
 import { ApiError } from "../../services/api"
 import { authService } from "../../services/authService"
 
-const CODE_LENGTH = 6
-
 type Step = "request" | "reset" | "success"
 
 const ForgotPasswordPage = () => {

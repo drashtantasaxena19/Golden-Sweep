@@ -40,8 +40,17 @@ const tabs: Array<{ value: DashboardTab; label: string }> = [
   { value: "games", label: "Games" },
 ];
 
-const toInputDate = (value: Date | string): string => {
-  const date = value instanceof Date ? value : new Date(value);
+const toInputDate = (
+  value: Date | string | null | undefined,
+): string => {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+
+  const date =
+    value instanceof Date
+      ? new Date(value.getTime())
+      : new Date(value);
 
   if (Number.isNaN(date.getTime())) {
     return "";

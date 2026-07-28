@@ -5,6 +5,7 @@ import {
     PackageCheck,
     PackageOpen,
     Sparkles,
+    type LucideIcon,
 } from "lucide-react";
 
 import type { RechargePackageStatistics } from "../../../types/recharge";
@@ -13,7 +14,16 @@ interface RechargeStatisticsProps {
     statistics: RechargePackageStatistics;
 }
 
-const cards = [
+type RechargeStatisticKey = keyof RechargePackageStatistics;
+
+interface RechargeStatisticCard {
+    key: RechargeStatisticKey;
+    label: string;
+    icon: LucideIcon;
+    currency?: boolean;
+}
+
+const cards: RechargeStatisticCard[] = [
     {
         key: "total_packages",
         label: "Total Plans",
@@ -45,7 +55,7 @@ const cards = [
         label: "Bonus Coins",
         icon: Sparkles,
     },
-] as const;
+];
 
 export default function RechargeStatistics({
     statistics,
@@ -56,6 +66,14 @@ export default function RechargeStatistics({
                 const Icon = card.icon;
                 const value = statistics[card.key];
 
+                const formattedValue = card.currency
+                    ? Number(value ?? 0).toLocaleString("en-US", {
+                          style: "currency",
+                          currency: "INR",
+                          maximumFractionDigits: 2,
+                      })
+                    : Number(value ?? 0).toLocaleString("en-US");
+
                 return (
                     <article
                         key={card.key}
@@ -65,17 +83,12 @@ export default function RechargeStatistics({
                             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                                 {card.label}
                             </p>
+
                             <Icon size={18} className="text-amber-400" />
                         </div>
 
                         <p className="mt-3 text-2xl font-bold text-white">
-                            {card.currency
-                                ? Number(value ?? 0).toLocaleString("en-US", {
-                                      style: "currency",
-                                      currency: "INR",
-                                      maximumFractionDigits: 2,
-                                  })
-                                : Number(value ?? 0).toLocaleString()}
+                            {formattedValue}
                         </p>
                     </article>
                 );

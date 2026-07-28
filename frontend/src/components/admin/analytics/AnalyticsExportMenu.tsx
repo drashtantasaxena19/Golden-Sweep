@@ -3,7 +3,7 @@ import { useState } from "react";
 import type {
   AnalyticsExportFormat,
   AnalyticsSection,
-} from "../../types/analytics";
+} from "../../../types/analytics";
 
 interface AnalyticsExportMenuProps {
   loading?: boolean;

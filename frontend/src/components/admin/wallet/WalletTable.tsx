@@ -1,7 +1,6 @@
 import {
   Eye,
   Lock,
-  MoreHorizontal,
   MinusCircle,
   PlusCircle,
   Unlock,

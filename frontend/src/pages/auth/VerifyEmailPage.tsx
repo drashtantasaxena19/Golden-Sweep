@@ -96,7 +96,6 @@ const VerifyEmailPage = () => {
         setResending(true)
         setError("")
         try {
-            const response = await authService.resendVerification(email)
             setCode(Array(CODE_LENGTH).fill(""))
             setCountdown(RESEND_SECONDS)
             window.setTimeout(() => inputRefs.current[0]?.focus(), 50)
