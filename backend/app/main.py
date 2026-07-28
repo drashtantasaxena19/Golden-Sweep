@@ -60,11 +60,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+allowed_origins = {
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://golden-sweep.vercel.app",
+}
+
+if settings.FRONTEND_URL:
+    allowed_origins.add(settings.FRONTEND_URL.rstrip("/"))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        settings.FRONTEND_URL,
-    ],
+    allow_origins=list(allowed_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
