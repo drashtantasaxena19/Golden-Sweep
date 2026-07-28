@@ -67,7 +67,7 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "https://golden-sweep.vercel.app",
     ],
-    allow_origin_regex=r"^https://golden-sweep-[a-zA-Z0-9-]+\.vercel\.app$",
+    allow_origin_regex=r"^https://golden-sweep-.*\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
